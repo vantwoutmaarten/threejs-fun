@@ -17,7 +17,7 @@ const HTMLContent = () => {
   return (
     <Section factor={1.5} offset={1}>
       <group position={[0, 250, 0]}>
-        <mesh position={(0, 35, 0)}>
+        <mesh position={(0, -35, 0)}>
           <Model />
         </mesh>
         <Html fullscreen>
