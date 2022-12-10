@@ -19,11 +19,115 @@
       import * as THREE from "../three.module.js";
       import { OrbitControls } from "./OrbitControls.js";
 
-      let camera,
-        scene,
-        renderer,
-        controls;
+      let camera, scene, renderer, controls, flameParticles;
 
+      const vertexShader = `
+        uniform float pointMultiplier;
+        attribute float scale;
+        void main() {
+          vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+          gl_Position = projectionMatrix * mvPosition;
+          gl_PointSize = scale * 1500.0 * pointMultiplier / gl_Position.w;
+        }
+      `;
+
+      const fragmentShader = `
+        uniform sampler2D diffuseTexture;
+
+        void main() {
+          gl_FragColor = texture2D(diffuseTexture, gl_PointCoord);
+        }
+      `;
+
+      class ParticleSystem {
+        constructor(texture, emit_every, particle_life) {
+          this.texture = texture;
+          this.emit_every = emit_every;
+          this.particle_life = particle_life;
+          this.last_emission = 0;
+
+          this.geometry = new THREE.BufferGeometry();
+          this.positions = [];
+          this.material = new THREE.ShaderMaterial({
+            uniforms: {
+              diffuseTexture: { value: texture },
+              pointMultiplier: {
+                value: window.innerHeight / window.innerWidth,
+              },
+            },
+            vertexShader,
+            fragmentShader,
+            blending: THREE.NormalBlending,
+            depthTest: true,
+            depthWrite: false,
+            transparent: true,
+            vertexColors: true,
+          });
+
+          this.mesh = new THREE.Points(this.geometry, this.material);
+          this.clock = new THREE.Clock();
+        }
+
+        setPosition(position) {
+          this.mesh.position.x = position.x;
+          this.mesh.position.y = position.y;
+          this.mesh.position.z = position.z;
+        }
+        getMesh() {
+          return this.mesh;
+        }
+
+        updateAspect() {
+          this.material.uniforms.pointMultiplier.value =
+            window.innerHeight / window.innerWidth;
+        }
+
+        spawn() {
+          this.particles.push({
+            position: [0, 0, 0],
+            scale: 1,
+            alpha: 1,
+            spawnTime: this.clock.elapsedTime,
+          });
+          this.last_emission = this.clock.elapsedTime;
+        }
+
+        update() {
+          const elapsedTime = this.clock.getElapsedTime();
+
+          this.particles = this.particles.filter(
+            (particle) => elapsedTime - particle.spawnTime < this.particle_life
+          );
+
+          if (elapsedTime - this.last_emission >= this.emit_every) {
+            this.spawn();
+          }
+
+          this.geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(
+              this.particles.map((particle) => particle.position).flat(),
+              3
+            )
+          );
+          this.geometry.setAttribute(
+            "scale",
+            new THREE.Float32BufferAttribute(
+              this.particles.map((particle) => particle.scale).flat(),
+              1
+            )
+          );
+          this.geometry.setAttribute(
+            "alpha",
+            new THREE.Float32BufferAttribute(
+              this.particles.map((particle) => particle.alpha).flat(),
+              1
+            )
+          );
+          this.geometry.attributes.position.needsUpdate = true;
+          this.geometry.attributes.scale.needsUpdate = true;
+        }
+      }
 
       init();
       animate();
@@ -58,7 +162,14 @@
         const torchGeometry = new THREE.BoxGeometry(0.5, 2.5, 0.5);
         const torch = new THREE.Mesh(torchGeometry, textures);
 
+        const flame = loader.load("flame.png");
+        flame.flipY = false;
+
+        flameParticles = new ParticleSystem(flame, 1, 2);
+        flameParticles.setPosition(new THREE.Vector3(0, 2.5 / 2 + 0.25, 0));
+
         scene.add(torch);
+        scene.add(flameParticles.getMesh());
 
         renderer = new THREE.WebGLRenderer();
         renderer.setClearColor(new THREE.Color(0xffffff));
@@ -77,18 +188,20 @@
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
 
+        flameParticles.updateAspect();
+
         renderer.setSize(window.innerWidth, window.innerHeight);
       }
       //
 
       function animate() {
         requestAnimationFrame(animate);
+        flameParticles.update();
 
         render();
       }
 
       function render() {
-
         renderer.render(scene, camera);
       }
     </script>
